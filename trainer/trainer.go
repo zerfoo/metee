@@ -40,7 +40,9 @@ type TrainResult struct {
 }
 
 // Trainer orchestrates model training, validation, and checkpointing.
-type Trainer struct{}
+type Trainer struct {
+	Callbacks []Callback
+}
 
 // Run trains the model, validates it, optionally saves a checkpoint, and returns the result.
 func (t *Trainer) Run(ctx context.Context, cfg TrainerConfig, m model.Model, train, valid *data.Dataset) (TrainResult, error) {
@@ -48,6 +50,10 @@ func (t *Trainer) Run(ctx context.Context, cfg TrainerConfig, m model.Model, tra
 	case <-ctx.Done():
 		return TrainResult{}, fmt.Errorf("trainer: %w", ctx.Err())
 	default:
+	}
+
+	for _, cb := range t.Callbacks {
+		cb.OnTrainStart(ctx)
 	}
 
 	if err := m.Train(ctx, train.Features, train.Targets); err != nil {
@@ -73,6 +79,10 @@ func (t *Trainer) Run(ctx context.Context, cfg TrainerConfig, m model.Model, tra
 			return TrainResult{}, fmt.Errorf("trainer: checkpoint: %w", err)
 		}
 		result.CheckpointPath = path
+	}
+
+	for _, cb := range t.Callbacks {
+		cb.OnTrainEnd(ctx, result)
 	}
 
 	return result, nil
