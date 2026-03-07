@@ -4,6 +4,8 @@ package metrics
 import (
 	"math"
 	"sort"
+
+	"gonum.org/v1/gonum/mat"
 )
 
 // PearsonCorrelation calculates the Pearson correlation coefficient between two slices.
@@ -226,6 +228,69 @@ func SpearmanPerEra(preds, targets []float64, eras []int) float64 {
 		return math.NaN()
 	}
 	return sum / float64(count)
+}
+
+// FeatureNeutralCorrelation neutralizes predictions against features (proportion=1.0)
+// and returns the Pearson correlation of the neutralized predictions with targets.
+func FeatureNeutralCorrelation(preds, targets []float64, features [][]float64) float64 {
+	neutralized := neutralize(preds, features)
+	return PearsonCorrelation(neutralized, targets)
+}
+
+// neutralize removes linear exposure to features from predictions using SVD projection.
+// This is inlined to avoid an import cycle with the transform package.
+func neutralize(predictions []float64, features [][]float64) []float64 {
+	n := len(predictions)
+	result := make([]float64, n)
+	copy(result, predictions)
+
+	if n == 0 || len(features) == 0 {
+		return result
+	}
+
+	nFeatures := len(features)
+	cols := nFeatures + 1
+
+	fData := make([]float64, n*cols)
+	for i := 0; i < n; i++ {
+		fData[i*cols] = 1.0
+		for j, feat := range features {
+			fData[i*cols+j+1] = feat[i]
+		}
+	}
+	f := mat.NewDense(n, cols, fData)
+
+	var svd mat.SVD
+	if !svd.Factorize(f, mat.SVDThin) {
+		return result
+	}
+
+	var u mat.Dense
+	svd.UTo(&u)
+	sv := svd.Values(nil)
+
+	maxSV := 0.0
+	for _, s := range sv {
+		if s > maxSV {
+			maxSV = s
+		}
+	}
+	tol := maxSV * float64(max(n, cols)) * 1e-14
+
+	for k := range sv {
+		if sv[k] < tol {
+			continue
+		}
+		var dot float64
+		for i := 0; i < n; i++ {
+			dot += u.At(i, k) * predictions[i]
+		}
+		for i := 0; i < n; i++ {
+			result[i] -= u.At(i, k) * dot
+		}
+	}
+
+	return result
 }
 
 func calculateRanks(values []float64) []float64 {

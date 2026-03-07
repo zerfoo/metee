@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"math"
+	"math/rand/v2"
 	"testing"
 )
 
@@ -35,12 +36,26 @@ func TestPearsonCorrelation(t *testing.T) {
 }
 
 func TestSpearmanCorrelation(t *testing.T) {
-	x := []float64{1, 2, 3, 4, 5}
-	y := []float64{5, 6, 7, 8, 7}
-	got := SpearmanCorrelation(x, y)
-	if got < 0.5 {
-		t.Errorf("SpearmanCorrelation() = %v, want > 0.5", got)
-	}
+	t.Run("positive", func(t *testing.T) {
+		x := []float64{1, 2, 3, 4, 5}
+		y := []float64{5, 6, 7, 8, 7}
+		got := SpearmanCorrelation(x, y)
+		if got < 0.5 {
+			t.Errorf("SpearmanCorrelation() = %v, want > 0.5", got)
+		}
+	})
+	t.Run("empty", func(t *testing.T) {
+		got := SpearmanCorrelation(nil, nil)
+		if !math.IsNaN(got) {
+			t.Errorf("SpearmanCorrelation(nil) = %v, want NaN", got)
+		}
+	})
+	t.Run("length mismatch", func(t *testing.T) {
+		got := SpearmanCorrelation([]float64{1}, []float64{1, 2})
+		if !math.IsNaN(got) {
+			t.Errorf("SpearmanCorrelation(mismatch) = %v, want NaN", got)
+		}
+	})
 }
 
 func TestSharpe(t *testing.T) {
@@ -172,6 +187,83 @@ func TestSpearmanPerEra(t *testing.T) {
 		got := SpearmanPerEra([]float64{1}, []float64{1, 2}, []int{1})
 		if !math.IsNaN(got) {
 			t.Errorf("SpearmanPerEra(mismatch) = %v, want NaN", got)
+		}
+	})
+}
+
+func TestFeatureNeutralCorrelation(t *testing.T) {
+	t.Run("FNC less than raw when predictions derive from features", func(t *testing.T) {
+		// Predictions come primarily from the feature (which also drives targets).
+		// Neutralizing removes the feature signal, reducing correlation with targets.
+		rng := rand.New(rand.NewPCG(42, 0))
+		n := 200
+		feature := make([]float64, n)
+		targets := make([]float64, n)
+		preds := make([]float64, n)
+		for i := 0; i < n; i++ {
+			feature[i] = rng.NormFloat64()
+			// Both targets and predictions depend on the same feature
+			targets[i] = feature[i] + 0.1*rng.NormFloat64()
+			preds[i] = feature[i] + 0.1*rng.NormFloat64()
+		}
+
+		features := [][]float64{feature}
+		rawCorr := PearsonCorrelation(preds, targets)
+		fnc := FeatureNeutralCorrelation(preds, targets, features)
+
+		if math.IsNaN(rawCorr) || math.IsNaN(fnc) {
+			t.Fatalf("got NaN: rawCorr=%v, fnc=%v", rawCorr, fnc)
+		}
+		if fnc >= rawCorr {
+			t.Errorf("FNC (%v) should be < raw Pearson (%v) when predictions derive from features", fnc, rawCorr)
+		}
+	})
+
+	t.Run("FNC equals raw when uncorrelated with features", func(t *testing.T) {
+		rng := rand.New(rand.NewPCG(99, 0))
+		n := 200
+		feature := make([]float64, n)
+		targets := make([]float64, n)
+		preds := make([]float64, n)
+		for i := 0; i < n; i++ {
+			feature[i] = float64(i)
+			targets[i] = rng.NormFloat64()
+			preds[i] = targets[i]
+		}
+		// Remove linear relationship between preds and feature
+		var dotPF, dotFF float64
+		meanP, meanF := 0.0, 0.0
+		for i := 0; i < n; i++ {
+			meanP += preds[i]
+			meanF += feature[i]
+		}
+		meanP /= float64(n)
+		meanF /= float64(n)
+		for i := 0; i < n; i++ {
+			dotPF += (preds[i] - meanP) * (feature[i] - meanF)
+			dotFF += (feature[i] - meanF) * (feature[i] - meanF)
+		}
+		beta := dotPF / dotFF
+		for i := 0; i < n; i++ {
+			preds[i] -= beta * (feature[i] - meanF)
+		}
+
+		features := [][]float64{feature}
+		rawCorr := PearsonCorrelation(preds, targets)
+		fnc := FeatureNeutralCorrelation(preds, targets, features)
+
+		if math.IsNaN(rawCorr) || math.IsNaN(fnc) {
+			t.Fatalf("got NaN: rawCorr=%v, fnc=%v", rawCorr, fnc)
+		}
+		if math.Abs(fnc-rawCorr) > 0.05 {
+			t.Errorf("FNC (%v) should approximately equal raw Pearson (%v) when preds are uncorrelated with features", fnc, rawCorr)
+		}
+	})
+
+	t.Run("empty inputs", func(t *testing.T) {
+		got := FeatureNeutralCorrelation(nil, nil, nil)
+		if !math.IsNaN(got) {
+			t.Errorf("FeatureNeutralCorrelation(nil) = %v, want NaN", got)
 		}
 	})
 }
