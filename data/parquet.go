@@ -205,6 +205,11 @@ func valueToInt(v parquet.Value) (int, error) {
 	case parquet.Int64:
 		return int(v.Int64()), nil
 	default:
-		return strconv.Atoi(strings.TrimSpace(v.String()))
+		n, err := strconv.Atoi(strings.TrimSpace(v.String()))
+		if err != nil {
+			// Non-numeric era (e.g. "X" in Numerai live data) → use 0
+			return 0, nil
+		}
+		return n, nil
 	}
 }

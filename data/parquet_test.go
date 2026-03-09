@@ -396,19 +396,19 @@ type testRowStringEra struct {
 	Era      string  `parquet:"era"`
 }
 
-func TestLoadParquet_BadEra(t *testing.T) {
+func TestLoadParquet_NonNumericEra(t *testing.T) {
 	dir := t.TempDir()
 	rows := []testRowStringEra{
-		{Feature1: 0.1, Target: 0.5, Era: "notanint"},
+		{Feature1: 0.1, Target: 0.5, Era: "X"},
 	}
-	path := writeTestParquet(t, dir, "badera.parquet", rows)
+	path := writeTestParquet(t, dir, "livera.parquet", rows)
 
-	_, err := LoadParquet(context.Background(), path)
-	if err == nil {
-		t.Fatal("expected error for non-integer era")
+	ds, err := LoadParquet(context.Background(), path)
+	if err != nil {
+		t.Fatalf("non-numeric era should not error (used by Numerai live data): %v", err)
 	}
-	if !strings.Contains(err.Error(), "era") {
-		t.Errorf("error should mention era: %v", err)
+	if ds.Eras[0] != 0 {
+		t.Errorf("non-numeric era should default to 0, got %d", ds.Eras[0])
 	}
 }
 
