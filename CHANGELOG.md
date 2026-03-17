@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/zerfoo/metee/compare/v1.0.0...v1.0.1) (2026-03-17)
+
+
+### Bug Fixes
+
+* **model:** add missing Model interface (Name, Train, Predict, Save, Load) ([1673bdf](https://github.com/zerfoo/metee/commit/1673bdf9ab146ee6f3c2f3b3bc0c29a01abf5226))
+
 ## 1.0.0 (2026-03-17)
 
 
